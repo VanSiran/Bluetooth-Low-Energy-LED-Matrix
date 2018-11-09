@@ -308,57 +308,34 @@ class Advertisement(dbus.service.Object):
         print('%s: Released!' % self.path)
 
 
-def find_adapter_gattmanager(bus):
+def find_adapter_name(bus):
     remote_om = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, '/'),
                                DBUS_OM_IFACE)
     objects = remote_om.GetManagedObjects()
 
-    for o, props in objects.items():
-        if GATT_MANAGER_IFACE in props.keys():
-            return o
-
-    return None
+    return map(filter(objects.items(),
+        lambda _, p: GATT_MANAGER_IFACE in p and LE_ADVERTISING_MANAGER_IFACE in p),
+        labmda x: x[0])
 
 
-def find_adapter_advertisingmanager(bus):
-    remote_om = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, '/'),
-                               DBUS_OM_IFACE)
-    objects = remote_om.GetManagedObjects()
-
-    for o, props in objects.items():
-        if LE_ADVERTISING_MANAGER_IFACE in props:
-            return o
-
-    return None
-
-
-def get_service_manager(bus):
-    # Get the GattManager
-    adapter_gattmanager = find_adapter_gattmanager(bus)
-    if not adapter_gattmanager:
-        print('GattManager1 interface not found')
+def get_managers(bus):
+    # Get the LEAdvertisingManager and GattManager
+    adapter_name = find_adapter_name(bus)
+    if not adapter_name:
+        print('BLE adapter with GattManager1 and LEAdvertisingManager1 interface not found')
         return
 
-    service_manager = dbus.Interface(
-        bus.get_object(BLUEZ_SERVICE_NAME, adapter_gattmanager),
-        GATT_MANAGER_IFACE)
-
-    return service_manager
-
-
-def get_ad_manager(bus):
-    # Get the AdapterManager
-    adapter_advertisingmanager = find_adapter_advertisingmanager(bus)
-    if not adapter_advertisingmanager:
-        print('LEAdvertisingManager1 interface not found')
-        return
-
-    adapter_props = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, adapter_advertisingmanager),
-                                   "org.freedesktop.DBus.Properties")
+    adapter_props = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, adapter_name), DBUS_PROP_IFACE)
 
     adapter_props.Set("org.bluez.Adapter1", "Powered", dbus.Boolean(1))
 
-    ad_manager = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, adapter_advertisingmanager),
-                                LE_ADVERTISING_MANAGER_IFACE)
+    service_manager = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, adapter_name),
+        GATT_MANAGER_IFACE)
 
-    return ad_manager
+    ad_manager = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, adapter_name),
+        LE_ADVERTISING_MANAGER_IFACE)
+
+    return ad_manager, service_manager
