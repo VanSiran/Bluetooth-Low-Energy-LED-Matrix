@@ -1,0 +1,78 @@
+#include <Windows.h>
+
+#include <stdio.h>
+
+#define PRINTER_NAME    "Deli DL-888D"
+
+//char cmd[] = "FORMFEED\r\n";
+
+char FileContent[204800];
+
+DWORD read_prn_file(char *filename)
+{
+    int len;
+    FILE *f = fopen(filename, "rb");
+
+    if (f == NULL) {
+        fprintf(stderr, "Open %s fail\n", filename);
+        return 0;
+    }
+    len = fread(FileContent, 1, 204800, f);
+    fclose(f);
+    fprintf(stderr, "%s: %d bytes\n", filename, len);
+    return len;
+}
+
+int main(int argc, char *argv[])
+{
+    int ret = 0;
+    HANDLE hPrinter = NULL;
+    DOC_INFO_1 DocInfo;
+    //DWORD dwLength = sizeof(cmd);
+    DWORD dwBytesWritten;
+    DWORD dwJob;
+    DWORD dwFileLenght;
+
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s filename\n", argv[0]);
+        return -1;
+    }
+
+    dwFileLenght = read_prn_file(argv[1]);
+    if (dwFileLenght == 0) {
+        fprintf(stderr, "Read %s fail or file is empty\n", argv[1]);
+        return -1;
+    }
+
+    if (!OpenPrinter(PRINTER_NAME, &hPrinter, NULL)) {
+        fprintf(stderr, "Open printer %s fail\n", PRINTER_NAME);
+        return -1;
+    }
+    DocInfo.pDocName = "IMEI";
+    DocInfo.pOutputFile = NULL;
+    DocInfo.pDatatype = "RAW"; 
+    dwJob = StartDocPrinter( hPrinter, 1, (LPBYTE)&DocInfo);
+    if (dwJob == 0) {
+        fprintf(stderr, "StartDocPrinter fail\n");
+        ret = 1;
+        goto error;
+    }
+    if (!StartPagePrinter(hPrinter)) {
+        fprintf(stderr, "StartPagePrinter fail\n");
+        ret = 1;
+        goto error2;
+    }
+    if (!WritePrinter(hPrinter, FileContent, dwFileLenght, &dwBytesWritten)
+            || dwBytesWritten != dwFileLenght) {
+        fprintf(stderr, "WritePrinter fail\n");
+        ret = 1;
+    } else {
+        fprintf(stderr, "Print label success.\n");
+    }
+    EndPagePrinter (hPrinter);
+error2:
+    EndDocPrinter(hPrinter);
+error:
+    ClosePrinter(hPrinter);
+    return ret;
+}
