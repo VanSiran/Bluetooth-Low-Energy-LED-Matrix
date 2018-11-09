@@ -43,9 +43,10 @@ class FailedException(dbus.exceptions.DBusException):
 
 
 class Application(dbus.service.Object):
-    def __init__(self, bus):
+    def __init__(self):
         self.path = '/'
         self.services = []
+        bus = dbus.SystemBus()
         dbus.service.Object.__init__(self, bus, self.path)
 
     def get_path(self):
@@ -72,11 +73,11 @@ class Application(dbus.service.Object):
 
 
 class Service(dbus.service.Object):
-    PATH_BASE = '/org/bluez/example/service'
+    PATH_BASE = '/org/bluez/user_services'
 
-    def __init__(self, bus, index, uuid, primary):
+    def __init__(self, index, uuid, primary):
         self.path = self.PATH_BASE + str(index)
-        self.bus = bus
+        bus = dbus.SystemBus()
         self.uuid = uuid
         self.primary = primary
         self.characteristics = []
@@ -119,9 +120,9 @@ class Service(dbus.service.Object):
 
 
 class Characteristic(dbus.service.Object):
-    def __init__(self, bus, index, uuid, flags, service):
+    def __init__(self, index, uuid, flags, service):
         self.path = service.path + '/char' + str(index)
-        self.bus = bus
+        bus = dbus.SystemBus()
         self.uuid = uuid
         self.service = service
         self.flags = flags
@@ -193,9 +194,9 @@ class Characteristic(dbus.service.Object):
 
 
 class Descriptor(dbus.service.Object):
-    def __init__(self, bus, index, uuid, flags, characteristic):
+    def __init__(self, index, uuid, flags, characteristic):
         self.path = characteristic.path + '/desc' + str(index)
-        self.bus = bus
+        bus = dbus.SystemBus()
         self.uuid = uuid
         self.flags = flags
         self.chrc = characteristic
@@ -236,11 +237,11 @@ class Descriptor(dbus.service.Object):
 
 
 class Advertisement(dbus.service.Object):
-    PATH_BASE = '/org/bluez/example/advertisement'
+    PATH_BASE = '/org/bluez/user_advertisements'
 
-    def __init__(self, bus, index, advertising_type):
+    def __init__(self, index, advertising_type):
         self.path = self.PATH_BASE + str(index)
-        self.bus = bus
+        bus = dbus.SystemBus()
         self.ad_type = advertising_type
         self.service_uuids = None
         self.manufacturer_data = None
@@ -308,34 +309,30 @@ class Advertisement(dbus.service.Object):
         print('%s: Released!' % self.path)
 
 
-def find_adapter_name(bus):
+def find_adapter_names():
+    # Return a list of adapter names, 
+    # which has the interface of Gatt and Advertisement avaliable.
+
+    bus = dbus.SystemBus()
     remote_om = dbus.Interface(bus.get_object(BLUEZ_SERVICE_NAME, '/'),
                                DBUS_OM_IFACE)
     objects = remote_om.GetManagedObjects()
 
-    return map(filter(objects.items(),
-        lambda _, p: GATT_MANAGER_IFACE in p and LE_ADVERTISING_MANAGER_IFACE in p),
-        labmda x: x[0])
+    return list(map(lambda x: x[0],filter(
+        lambda p: GATT_MANAGER_IFACE in p[1] and LE_ADVERTISING_MANAGER_IFACE in p[1],
+        objects.items())))
 
 
-def get_managers(bus):
+def get_managers_of_adapter(adapter_name):
     # Get the LEAdvertisingManager and GattManager
-    adapter_name = find_adapter_name(bus)
-    if not adapter_name:
-        print('BLE adapter with GattManager1 and LEAdvertisingManager1 interface not found')
-        return
 
-    adapter_props = dbus.Interface(
-        bus.get_object(BLUEZ_SERVICE_NAME, adapter_name), DBUS_PROP_IFACE)
+    bus = dbus.SystemBus()
+    adapter = bus.get_object(BLUEZ_SERVICE_NAME, adapter_name)
 
-    adapter_props.Set("org.bluez.Adapter1", "Powered", dbus.Boolean(1))
+    adapter.Set("org.bluez.Adapter1", "Powered", dbus.Boolean(1), 
+        dbus_interface=DBUS_PROP_IFACE)
 
-    service_manager = dbus.Interface(
-        bus.get_object(BLUEZ_SERVICE_NAME, adapter_name),
-        GATT_MANAGER_IFACE)
-
-    ad_manager = dbus.Interface(
-        bus.get_object(BLUEZ_SERVICE_NAME, adapter_name),
-        LE_ADVERTISING_MANAGER_IFACE)
-
-    return ad_manager, service_manager
+    return {
+        "advertisement": dbus.Interface(adapter, LE_ADVERTISING_MANAGER_IFACE),
+        "gatt": dbus.Interface(adapter, GATT_MANAGER_IFACE)
+    }
